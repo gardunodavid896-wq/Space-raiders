@@ -87,7 +87,6 @@
 <body>
 
 <div id="gameContainer">
-
   <canvas id="game" width="600" height="800"></canvas>
 
   <div id="startScreen">
@@ -106,7 +105,6 @@
     <div class="subtitle" id="finalScore">Score: 0</div>
     <button id="restartBtn">PLAY AGAIN</button>
   </div>
-
 </div>
 
 <script>
@@ -142,7 +140,10 @@ const player = {
   speed: 6,
   health: 100,
   cooldown: 0,
-  invincible: 0
+  invincible: 0,
+  rapidFire: 0,
+  tripleShot: 0,
+  shield: 0
 };
 
 const stars = [];
@@ -151,6 +152,7 @@ const enemies = [];
 const enemyBullets = [];
 const asteroids = [];
 const particles = [];
+const powerUps = [];
 
 for (let i = 0; i < 130; i++) {
   stars.push({
@@ -201,12 +203,16 @@ function startGame() {
   player.health = 100;
   player.cooldown = 0;
   player.invincible = 0;
+  player.rapidFire = 0;
+  player.tripleShot = 0;
+  player.shield = 0;
 
   bullets.length = 0;
   enemies.length = 0;
   enemyBullets.length = 0;
   asteroids.length = 0;
   particles.length = 0;
+  powerUps.length = 0;
 
   startScreen.style.display = "none";
   gameOverScreen.style.display = "none";
@@ -243,6 +249,16 @@ function drawPlayer() {
 
   if (player.invincible > 0 && Math.floor(player.invincible / 5) % 2 === 0) {
     ctx.globalAlpha = 0.35;
+  }
+
+  if (player.shield > 0) {
+    ctx.strokeStyle = "#6effff";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "#6effff";
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(x + 22, y + 30, 38, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   ctx.shadowColor = "#47eaff";
@@ -303,28 +319,31 @@ function drawPlayer() {
   ctx.restore();
 }
 
+function addBullet(x, y, dx = 0) {
+  bullets.push({
+    x,
+    y,
+    width: 4,
+    height: 22,
+    speed: 11,
+    dx,
+    damage: 1
+  });
+}
+
 function shootPlayer() {
   if (player.cooldown > 0) return;
 
-  bullets.push({
-    x: player.x + 8,
-    y: player.y + 5,
-    width: 4,
-    height: 22,
-    speed: 11,
-    damage: 1
-  });
+  if (player.tripleShot > 0) {
+    addBullet(player.x + 8, player.y + 5, -2.2);
+    addBullet(player.x + 20, player.y, 0);
+    addBullet(player.x + 32, player.y + 5, 2.2);
+  } else {
+    addBullet(player.x + 8, player.y + 5);
+    addBullet(player.x + 32, player.y + 5);
+  }
 
-  bullets.push({
-    x: player.x + 32,
-    y: player.y + 5,
-    width: 4,
-    height: 22,
-    speed: 11,
-    damage: 1
-  });
-
-  player.cooldown = 10;
+  player.cooldown = player.rapidFire > 0 ? 5 : 10;
 }
 
 function updatePlayer() {
@@ -340,12 +359,16 @@ function updatePlayer() {
 
   if (player.cooldown > 0) player.cooldown--;
   if (player.invincible > 0) player.invincible--;
+  if (player.rapidFire > 0) player.rapidFire--;
+  if (player.tripleShot > 0) player.tripleShot--;
 }
 
 function drawPlayerBullets() {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
+
     b.y -= b.speed;
+    b.x += b.dx || 0;
 
     ctx.save();
     ctx.shadowColor = "#37ff9d";
@@ -359,20 +382,22 @@ function drawPlayerBullets() {
     ctx.fillRect(b.x, b.y, b.width, b.height);
     ctx.restore();
 
-    if (b.y < -30) bullets.splice(i, 1);
+    if (b.y < -30 || b.x < -20 || b.x > canvas.width + 20) {
+      bullets.splice(i, 1);
+    }
   }
 }
 
 function spawnEnemy() {
-  const speedBoost = (wave - 1) * 0.3;
+  const speedBoost = (wave - 1) * 0.45;
 
   enemies.push({
     x: Math.random() * 520 + 20,
     y: -70,
     width: 52,
     height: 48,
-    speed: 1.8 + Math.random() + speedBoost,
-    cooldown: 60 + Math.random() * 90,
+    speed: 2.5 + Math.random() * 1.2 + speedBoost,
+    cooldown: 55 + Math.random() * 80,
     hp: wave >= 3 ? 2 : 1
   });
 }
@@ -438,16 +463,113 @@ function updateEnemies() {
         x: enemy.x + 26,
         y: enemy.y + 42,
         dx: 0,
-        dy: 3.8 + wave * 0.25,
+        dy: 4.2 + wave * 0.3,
         radius: 6
       });
 
-      enemy.cooldown = 100 + Math.random() * 75;
+      enemy.cooldown = 90 + Math.random() * 70;
     }
 
     if (enemy.y > canvas.height + 70) {
       enemies.splice(i, 1);
     }
+  }
+}
+
+function maybeDropPowerUp(x, y) {
+  const roll = Math.random();
+
+  let type = null;
+
+  if (roll < 0.05) type = "heal";
+  else if (roll < 0.12) type = "shield";
+  else if (roll < 0.20) type = "triple";
+  else if (roll < 0.30) type = "rapid";
+
+  if (!type) return;
+
+  powerUps.push({
+    x,
+    y,
+    width: 28,
+    height: 28,
+    speed: 2.2,
+    type,
+    rotation: 0
+  });
+}
+
+function drawPowerUps() {
+  for (let i = powerUps.length - 1; i >= 0; i--) {
+    const p = powerUps[i];
+
+    p.y += p.speed;
+    p.rotation += 0.04;
+
+    ctx.save();
+    ctx.translate(p.x + 14, p.y + 14);
+    ctx.rotate(p.rotation);
+
+    let color = "#ffffff";
+    let symbol = "?";
+
+    if (p.type === "rapid") {
+      color = "#ffe45c";
+      symbol = "⚡";
+    }
+
+    if (p.type === "triple") {
+      color = "#b86cff";
+      symbol = "3";
+    }
+
+    if (p.type === "shield") {
+      color = "#5cecff";
+      symbol = "S";
+    }
+
+    if (p.type === "heal") {
+      color = "#5cff87";
+      symbol = "+";
+    }
+
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 18;
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, 13, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#11152c";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(symbol, 0, 1);
+
+    ctx.restore();
+
+    if (p.y > canvas.height + 40) {
+      powerUps.splice(i, 1);
+    }
+  }
+}
+
+function collectPowerUp(type) {
+  if (type === "rapid") {
+    player.rapidFire = 60 * 8;
+  }
+
+  if (type === "triple") {
+    player.tripleShot = 60 * 10;
+  }
+
+  if (type === "shield") {
+    player.shield = 1;
+  }
+
+  if (type === "heal") {
+    player.health = Math.min(100, player.health + 30);
   }
 }
 
@@ -537,8 +659,8 @@ function bossFireAim() {
     enemyBullets.push({
       x: sx,
       y: sy,
-      dx: Math.cos(angle + offset) * 4.2,
-      dy: Math.sin(angle + offset) * 4.2,
+      dx: Math.cos(angle + offset) * 4.4,
+      dy: Math.sin(angle + offset) * 4.4,
       radius: 7
     });
   }
@@ -548,14 +670,14 @@ function updateBoss() {
   if (!boss) return;
 
   if (boss.entering) {
-    boss.y += 2;
+    boss.y += 2.4;
 
     if (boss.y >= 75) {
       boss.y = 75;
       boss.entering = false;
     }
   } else {
-    boss.x += boss.direction * 2.2;
+    boss.x += boss.direction * 2.7;
 
     if (boss.x <= 20 || boss.x + boss.width >= canvas.width - 20) {
       boss.direction *= -1;
@@ -563,7 +685,7 @@ function updateBoss() {
 
     boss.shootTimer++;
 
-    if (boss.shootTimer > 65) {
+    if (boss.shootTimer > 58) {
       if (boss.attackMode % 2 === 0) bossFireSpread();
       else bossFireAim();
 
@@ -612,7 +734,7 @@ function spawnAsteroid() {
     y: -size,
     width: size,
     height: size,
-    speed: 1.4 + Math.random() * 1.5,
+    speed: 1.7 + Math.random() * 1.8,
     rotation: Math.random() * Math.PI,
     rotationSpeed: (Math.random() - 0.5) * 0.035
   });
@@ -650,16 +772,6 @@ function drawAsteroids() {
     }
 
     ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = "#34343e";
-
-    ctx.beginPath();
-    ctx.arc(-8, -6, radius * 0.17, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(8, 8, radius * 0.12, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();
@@ -730,6 +842,18 @@ function bulletHitsPlayer(b) {
 function damagePlayer(amount) {
   if (player.invincible > 0) return;
 
+  if (player.shield > 0) {
+    player.shield = 0;
+    player.invincible = 25;
+
+    createExplosion(
+      player.x + player.width / 2,
+      player.y + player.height / 2
+    );
+
+    return;
+  }
+
   player.health -= amount;
   player.invincible = 45;
 
@@ -745,9 +869,16 @@ function damagePlayer(amount) {
 }
 
 function enemyDestroyed(enemyIndex) {
+  const enemy = enemies[enemyIndex];
+
   createExplosion(
-    enemies[enemyIndex].x + enemies[enemyIndex].width / 2,
-    enemies[enemyIndex].y + enemies[enemyIndex].height / 2
+    enemy.x + enemy.width / 2,
+    enemy.y + enemy.height / 2
+  );
+
+  maybeDropPowerUp(
+    enemy.x + enemy.width / 2 - 14,
+    enemy.y + enemy.height / 2 - 14
   );
 
   enemies.splice(enemyIndex, 1);
@@ -785,6 +916,16 @@ function bossDefeated() {
 
   score += 3000;
 
+  powerUps.push({
+    x: boss.x + boss.width / 2 - 14,
+    y: boss.y + boss.height / 2,
+    width: 28,
+    height: 28,
+    speed: 2.2,
+    type: "heal",
+    rotation: 0
+  });
+
   boss = null;
   bossActive = false;
 
@@ -797,9 +938,7 @@ function bossDefeated() {
 }
 
 function checkCollisions() {
-
   for (let i = bullets.length - 1; i >= 0; i--) {
-
     let used = false;
 
     if (bossActive && boss && rectCollision(bullets[i], boss)) {
@@ -807,18 +946,14 @@ function checkCollisions() {
       bullets.splice(i, 1);
       used = true;
 
-      if (boss.hp <= 0) {
-        bossDefeated();
-      }
+      if (boss.hp <= 0) bossDefeated();
     }
 
     if (used) continue;
 
     for (let j = enemies.length - 1; j >= 0; j--) {
       if (rectCollision(bullets[i], enemies[j])) {
-
         enemies[j].hp--;
-
         bullets.splice(i, 1);
 
         if (enemies[j].hp <= 0) {
@@ -834,7 +969,6 @@ function checkCollisions() {
 
     for (let j = asteroids.length - 1; j >= 0; j--) {
       if (rectCollision(bullets[i], asteroids[j])) {
-
         createExplosion(
           asteroids[j].x + asteroids[j].width / 2,
           asteroids[j].y + asteroids[j].height / 2
@@ -865,11 +999,6 @@ function checkCollisions() {
 
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (rectCollision(enemies[i], player)) {
-      createExplosion(
-        enemies[i].x + enemies[i].width / 2,
-        enemies[i].y + enemies[i].height / 2
-      );
-
       enemies.splice(i, 1);
       damagePlayer(30);
     }
@@ -877,6 +1006,13 @@ function checkCollisions() {
 
   if (bossActive && boss && rectCollision(boss, player)) {
     damagePlayer(50);
+  }
+
+  for (let i = powerUps.length - 1; i >= 0; i--) {
+    if (rectCollision(powerUps[i], player)) {
+      collectPowerUp(powerUps[i].type);
+      powerUps.splice(i, 1);
+    }
   }
 }
 
@@ -906,6 +1042,27 @@ function drawHUD() {
 
   ctx.strokeStyle = "#bdeeff";
   ctx.strokeRect(470, 19, 105, 18);
+
+  let statusY = 86;
+
+  ctx.font = "bold 13px Arial";
+
+  if (player.rapidFire > 0) {
+    ctx.fillStyle = "#ffe45c";
+    ctx.fillText("⚡ RAPID " + Math.ceil(player.rapidFire / 60) + "s", 20, statusY);
+    statusY += 20;
+  }
+
+  if (player.tripleShot > 0) {
+    ctx.fillStyle = "#d38cff";
+    ctx.fillText("TRIPLE " + Math.ceil(player.tripleShot / 60) + "s", 20, statusY);
+    statusY += 20;
+  }
+
+  if (player.shield > 0) {
+    ctx.fillStyle = "#63efff";
+    ctx.fillText("SHIELD READY", 20, statusY);
+  }
 
   if (bossActive && boss) {
     ctx.fillStyle = "#27101f";
@@ -968,12 +1125,11 @@ function drawWaveMessage() {
 }
 
 function spawnObjects() {
-
   if (bossActive) return;
   if (waveDelay > 0) return;
 
-  const enemyRate = Math.max(45, 85 - wave * 8);
-  const asteroidRate = Math.max(90, 155 - wave * 10);
+  const enemyRate = Math.max(38, 76 - wave * 7);
+  const asteroidRate = Math.max(80, 145 - wave * 10);
 
   if (frame % enemyRate === 0) spawnEnemy();
   if (frame % asteroidRate === 0) spawnAsteroid();
@@ -1001,7 +1157,6 @@ function gameLoop() {
   updateStars();
 
   if (running) {
-
     frame++;
 
     updatePlayer();
@@ -1018,6 +1173,7 @@ function gameLoop() {
     }
 
     drawEnemyBullets();
+    drawPowerUps();
 
     checkCollisions();
 
@@ -1027,8 +1183,8 @@ function gameLoop() {
     drawWaveMessage();
 
   } else {
-
     drawAsteroids();
+    drawPowerUps();
     updateParticles();
 
     if (player.health > 0) {

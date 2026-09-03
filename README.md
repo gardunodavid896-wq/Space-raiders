@@ -99,8 +99,6 @@ Planned improvements include:
 
 ## Play Space Raiders
 
-Add your GitHub Pages link here:
-
 `https://gardunodavid896-wq.github.io/Space-raiders/'
 
 ## Author
